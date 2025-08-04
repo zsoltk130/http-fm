@@ -20,40 +20,38 @@ import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private var server: HTTPServer? = null
+    private val logLines = mutableStateListOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Display initial text
+        logLines += listOf(
+            "=== HTTP File Manager v1.0 ===",
+            "=== (c) zsoltk130 Aug/2025 ===",
+            "User Interface initialised...",
+            "Starting server on port 8080..."
+        )
+
+        // Launch HTTP server
         server = HTTPServer()
         try {
             server?.start()
             Log.d("HTTPServer", "Started on port 8080")
+            logLines += "Server started successfully on port 8080"
         } catch (e: Exception) {
             Log.e("HTTPServer", "Failed to start server", e)
+            logLines += "ERROR: Server failed to start: ${e.message}"
         }
         setContent {
-            DisplayText()
+            DisplayText(logLines)
         }
     }
 }
 
 @Composable
-fun DisplayText() {
+fun DisplayText(lines: List<String>) {
     val scrollState = rememberScrollState()
-    val lines = remember { mutableStateListOf<String>() }
-
-    // Add text from the bottom up, like an old-school console
-    LaunchedEffect(Unit) {
-        val sampleLines = listOf(
-            "=== HTTP File Manager v1.0 ===",
-            "=== (c) zsoltk130 Aug/2025 ===",
-            "User Interface initialised..."
-        )
-        for (line in sampleLines) {
-            delay(1000) // Delay between lines
-            lines.add(line)
-        }
-    }
 
     Box(
         modifier = Modifier
