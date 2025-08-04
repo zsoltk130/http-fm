@@ -1,6 +1,8 @@
 package com.zsoltk130.http_fm
 
+import android.Manifest
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,7 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import androidx.core.app.ActivityCompat
 
 class MainActivity : ComponentActivity() {
     private var server: HTTPServer? = null
@@ -33,8 +35,17 @@ class MainActivity : ComponentActivity() {
             "Starting server on port 8080..."
         )
 
+        // Request permission at runtime for Android 6+
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+            123
+        )
+
+        val homeDir = Environment.getExternalStorageDirectory()
+
         // Launch HTTP server
-        server = HTTPServer()
+        server = HTTPServer(this, homeDir)
         try {
             server?.start()
             Log.d("HTTPServer", "Started on port 8080")
@@ -49,6 +60,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Sets background and text colour + text alignment from bottom to top
 @Composable
 fun DisplayText(lines: List<String>) {
     val scrollState = rememberScrollState()
