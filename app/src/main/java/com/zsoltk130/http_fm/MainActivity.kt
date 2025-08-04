@@ -1,6 +1,7 @@
 package com.zsoltk130.http_fm
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -18,8 +19,18 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
+    private var server: HTTPServer? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        server = HTTPServer()
+        try {
+            server?.start()
+            Log.d("HTTPServer", "Started on port 8080")
+        } catch (e: Exception) {
+            Log.e("HTTPServer", "Failed to start server", e)
+        }
         setContent {
             DisplayText()
         }
@@ -34,8 +45,9 @@ fun DisplayText() {
     // Add text from the bottom up, like an old-school console
     LaunchedEffect(Unit) {
         val sampleLines = listOf(
-            "=== HTTP File Manager v1.0 (c) 2025 just4fun49",
-            "User Interface initialised"
+            "=== HTTP File Manager v1.0 ===",
+            "=== (c) zsoltk130 Aug/2025 ===",
+            "User Interface initialised..."
         )
         for (line in sampleLines) {
             delay(1000) // Delay between lines
