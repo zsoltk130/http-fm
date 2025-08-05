@@ -111,16 +111,16 @@ class HTTPServer(
             val encodedPath = URLEncoder.encode(path, "UTF-8")
             val icon = if (file.isDirectory) "📁" else "📄"
 
+            append("<li>")
+            append("""<input type="checkbox" name="selected" value="$encodedPath" />""")
+
             if (file.isDirectory) {
-                append("<li><a href=\"/browse/$encodedPath\">$icon $name</a></li>")
+                append("""<a href="/browse/$encodedPath">$icon $name</a>""")
             } else {
-                append("""
-                    <li>
-                        <input type="checkbox" name="selected" value="$encodedPath" />
-                        <a href="/download/$encodedPath">$icon $name</a>
-                    </li>
-                """.trimIndent())
+                append("""<a href="/download/$encodedPath">$icon $name</a>""")
             }
+
+            append("</li>")
         }
 
             append("""
