@@ -34,8 +34,8 @@ class MainActivity : ComponentActivity() {
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.08 ===",
-            "=== (c) zsoltk130  Aug/2025 ==="
+            "=== HTTP File Manager v1.0.10 ===",
+            "=== (c) zsoltk130 -- Aug/2025 ==="
         )
 
         // Permissions check

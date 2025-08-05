@@ -19,11 +19,12 @@ class HTTPServer(
 
     override fun serve(session: IHTTPSession): Response {
         val clientIP = session.remoteIpAddress
-        log("Connection from IP: $clientIP")
-        val userAgent = session.headers["user-agent"] ?: "Unknown User-Agent"
-        log("User-Agent: $userAgent")
-
         val uri = session.uri
+
+        // Log accesses
+        if (uri != "/favicon.ico") {
+            log("Request from $clientIP to $uri")
+        }
 
         return when {
             uri == "/" -> listContentsInDirectory(rootDir)
@@ -163,22 +164,68 @@ class HTTPServer(
             newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "File not found.")
         }
     }
+    private fun addFileToZip(file: File, zipPath: String, zipOut: ZipOutputStream) {
+        zipOut.putNextEntry(ZipEntry(zipPath))
+        file.inputStream().use { it.copyTo(zipOut) }
+        zipOut.closeEntry()
+    }
+
+    private fun addDirectoryToZip(dir: File, basePath: String, zipOut: ZipOutputStream) {
+        val files = dir.listFiles() ?: return
+        for (file in files) {
+            val path = "$basePath/${file.name}"
+            if (file.isDirectory) {
+                addDirectoryToZip(file, path, zipOut)
+            } else {
+                addFileToZip(file, path, zipOut)
+            }
+        }
+    }
 
     private fun handleMultiDownload(session: IHTTPSession): Response {
-        session.parseBody(mutableMapOf()) // Needed to parse POST data
+        session.parseBody(mutableMapOf()) // Parse POST data
 
         val selected = session.parameters["selected"]
             ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "No files selected.")
 
+        if (selected.size == 1) {
+            // Only one item selected — decode and serve directly
+            val decoded = URLDecoder.decode(selected[0], "UTF-8")
+            val file = File(rootDir, decoded)
+
+            return if (file.exists() && file.isFile) {
+                serveFile(file)
+            } else if (file.exists() && file.isDirectory) {
+                // If it's a single directory, still ZIP it
+                val zipFile = File.createTempFile("download_", ".zip", context.cacheDir)
+                ZipOutputStream(zipFile.outputStream()).use { zipOut ->
+                    addDirectoryToZip(file, file.name, zipOut)
+                }
+
+                val response = newChunkedResponse(
+                    Response.Status.OK,
+                    "application/zip",
+                    FileInputStream(zipFile)
+                )
+                response.addHeader("Content-Disposition", "attachment; filename=\"${file.name}.zip\"")
+                response
+            } else {
+                newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "File not found.")
+            }
+        }
+
+        // Otherwise, multiple files/folders selected — ZIP them all
         val zipFile = File.createTempFile("download_", ".zip", context.cacheDir)
         ZipOutputStream(zipFile.outputStream()).use { zipOut ->
             for (relPath in selected) {
                 val decoded = URLDecoder.decode(relPath, "UTF-8")
                 val file = File(rootDir, decoded)
-                if (file.exists() && file.isFile) {
-                    zipOut.putNextEntry(ZipEntry(decoded))
-                    file.inputStream().use { it.copyTo(zipOut) }
-                    zipOut.closeEntry()
+                if (file.exists()) {
+                    if (file.isFile) {
+                        addFileToZip(file, decoded, zipOut)
+                    } else if (file.isDirectory) {
+                        addDirectoryToZip(file, decoded, zipOut)
+                    }
                 }
             }
         }
