@@ -13,10 +13,16 @@ import java.util.zip.ZipOutputStream
 
 class HTTPServer(
     private val context: Context,
-    private val rootDir: File = Environment.getExternalStorageDirectory()
+    private val rootDir: File = Environment.getExternalStorageDirectory(),
+    private val log: (String) -> Unit
 ) : NanoHTTPD(8080) {
 
     override fun serve(session: IHTTPSession): Response {
+        val clientIP = session.remoteIpAddress
+        log("Connection from IP: $clientIP")
+        val userAgent = session.headers["user-agent"] ?: "Unknown User-Agent"
+        log("User-Agent: $userAgent")
+
         val uri = session.uri
 
         return when {

@@ -61,7 +61,9 @@ class MainActivity : ComponentActivity() {
                 logs = logs,
                 onStartServer = {
                     try {
-                        server = HTTPServer(this, homeDir)
+                        server = HTTPServer(this, homeDir) { message ->
+                            logs += message
+                        }
                         server?.start()
                         logs += "Server started on port 8080"
                     } catch (e: Exception) {
