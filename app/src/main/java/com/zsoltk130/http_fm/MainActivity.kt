@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.04 ===",
+            "=== HTTP File Manager v1.07 ===",
             "=== (c) zsoltk130  Aug/2025 ==="
         )
 
@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Define logger function
+// Define user interface
 @Composable
 fun FileManagerUI(
     logs: List<String>,

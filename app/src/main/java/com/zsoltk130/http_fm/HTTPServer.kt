@@ -33,14 +33,12 @@ class HTTPServer(
             }
 
             uri.startsWith("/download/") -> {
-                val relPath = URLDecoder.decode(uri.removePrefix("/download/"), "UTF-8")
+                val relPath = URLDecoder.decode(uri.removePrefix("/download/").replace("+", "%2B"), "UTF-8")
                 val file = File(rootDir, relPath)
                 serveFile(file)
             }
 
-            uri == "/download-multiple" && session.method == Method.POST -> {
-                handleMultiDownload(session)
-            }
+            uri == "/download-multiple" && session.method == Method.POST -> handleMultiDownload(session)
 
             uri == "/upload" && session.method == Method.POST -> handleFileUpload(session)
 
@@ -54,7 +52,7 @@ class HTTPServer(
             append("""
             <html>
             <head>
-                <title>File Manager</title>
+                <title>http-fm</title>
                 <style>
                     body {
                         background-color: #1e1e1e;
@@ -90,7 +88,7 @@ class HTTPServer(
                 </style>
             </head>
             <body>
-                <h2>Files in /${relPath}</h2>
+                <h2>Files in /$relPath</h2>
                 <ul>
             """.trimIndent())
 
@@ -148,7 +146,13 @@ class HTTPServer(
     private fun serveFile(file: File): Response {
         return if (file.exists() && file.isFile) {
             val mime = URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
-            newChunkedResponse(Response.Status.OK, mime, FileInputStream(file))
+            val inputStream = FileInputStream(file)
+            val response = newChunkedResponse(Response.Status.OK, mime, inputStream)
+
+            // Add content disposition header to set filename correctly
+            response.addHeader("Content-Disposition", "attachment; filename=\"${file.name}\"")
+
+            response
         } else {
             newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "File not found.")
         }
