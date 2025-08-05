@@ -17,12 +17,12 @@ class HTTPServer(
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
         return when {
-            uri == "/" -> listFilesInDirectory(rootDir)
+            uri == "/" -> listContentsInDirectory(rootDir)
             uri.startsWith("/browse/") -> {
                 val relPath = URLDecoder.decode(uri.removePrefix("/browse/"), "UTF-8")
                 val dir = File(rootDir, relPath)
                 if (dir.exists() && dir.isDirectory) {
-                    listFilesInDirectory(dir, relPath)
+                    listContentsInDirectory(dir, relPath)
                 } else {
                     newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Directory not found.")
                 }
@@ -36,30 +36,93 @@ class HTTPServer(
         }
     }
 
-    private fun listFilesInDirectory(dir: File, relPath: String = ""): Response {
+    private fun listContentsInDirectory(dir: File, relPath: String = ""): Response {
         val files = dir.listFiles()?.toList() ?: return newFixedLengthResponse("No files found.")
         val html = buildString {
-            append("<html><body>")
-            append("<h2>Files in /${relPath.ifBlank { "" }}</h2><ul>")
+            append("""
+            <html>
+            <head>
+                <title>File Manager</title>
+                <style>
+                    body {
+                        background-color: #1e1e1e;
+                        color: #c7fdbb;
+                        font-family: monospace;
+                        padding: 20px;
+                    }
+                    h2 {
+                        color: #9eff7c;
+                        margin-bottom: 20px;
+                    }
+                    ul {
+                        list-style-type: none;
+                        padding: 0;
+                    }
+                    li {
+                        margin: 10px 0;
+                    }
+                    a {
+                        text-decoration: none;
+                        color: #78e2a0;
+                    }
+                    a:hover {
+                        text-decoration: underline;
+                        color: #bbffaa;
+                    }
+                    .folder {
+                        font-weight: bold;
+                    }
+                    .back {
+                        color: #ffb347;
+                    }
+                </style>
+            </head>
+            <body>
+                <h2>Files in /${relPath}</h2>
+                <ul>
+            """.trimIndent())
 
-            // Back link
-            if (dir != rootDir) {
-                val parentRelPath = File(relPath).parent ?: ""
-                val encoded = URLEncoder.encode(parentRelPath, "UTF-8")
-                append("<li><a href=\"/browse/$encoded\">.. (parent)</a></li>")
-            }
-
-            for (file in files) {
-                val name = file.name
-                val path = if (relPath.isBlank()) name else "$relPath/$name"
-                val encodedPath = URLEncoder.encode(path, "UTF-8")
-                val display = if (file.isDirectory) "[DIR] $name" else name
-                val href = if (file.isDirectory) "/browse/$encodedPath" else "/download/$encodedPath"
-                append("<li><a href=\"$href\">$display</a></li>")
-            }
-
-            append("</ul></body></html>")
+        // Back link
+        if (dir != rootDir) {
+            val parentRelPath = File(relPath).parent ?: ""
+            val encoded = URLEncoder.encode(parentRelPath, "UTF-8")
+            append("<a class=\"back\" href=\"/browse/$encoded\">⬅️ .. (previous)</a>")
         }
+
+            append("""
+        <form method="POST" action="/download-multiple">
+        <ul>
+        """.trimIndent())
+
+        // List items
+        for (file in files.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))) {
+            val name = file.name
+            val path = if (relPath.isBlank()) name else "$relPath/$name"
+            val encodedPath = URLEncoder.encode(path, "UTF-8")
+            val icon = if (file.isDirectory) "📁" else "📄"
+
+            if (file.isDirectory) {
+                append("<li><a href=\"/browse/$encodedPath\">$icon $name</a></li>")
+            } else {
+                append("""
+            <li>
+                <input type="checkbox" name="selected" value="$encodedPath" />
+                <a href="/download/$encodedPath">$icon $name</a>
+            </li>
+        """.trimIndent())
+            }
+        }
+
+
+            append("""
+        </ul>
+        <button type="submit">Download Selected</button>
+        </form>
+        </body>
+        </html>
+        """.trimIndent())
+        }
+
         return newFixedLengthResponse(Response.Status.OK, "text/html", html)
     }
 
