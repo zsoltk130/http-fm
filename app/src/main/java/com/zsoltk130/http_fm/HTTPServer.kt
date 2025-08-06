@@ -45,6 +45,12 @@ class HTTPServer(
                 serveFile(file)
             }
 
+            uri.startsWith("/preview/") -> {
+                val relPath = URLDecoder.decode(uri.removePrefix("/preview/").replace("+", "%2B"), "UTF-8")
+                val file = File(rootDir, relPath)
+                serveRawFile(file)
+            }
+
             uri == "/download-multiple" && session.method == Method.POST -> handleMultiDownload(session)
 
             uri == "/upload" && session.method == Method.POST -> handleFileUpload(session)
@@ -117,17 +123,19 @@ class HTTPServer(
             val path = if (relPath.isBlank()) name else "$relPath/$name"
             val encodedPath = URLEncoder.encode(path, "UTF-8")
             val icon = if (file.isDirectory) "📁" else "📄"
+            val href = if (file.isDirectory) "/browse/$encodedPath" else "/download/$encodedPath"
 
-            append("<li>")
-            append("""<input type="checkbox" name="selected" value="$encodedPath" />""")
-
-            if (file.isDirectory) {
-                append("""<a href="/browse/$encodedPath">$icon $name</a>""")
-            } else {
-                append("""<a href="/download/$encodedPath">$icon $name</a>""")
-            }
-
-            append("</li>")
+            append("""
+            <li>
+              <input type="checkbox" name="selected" value="$encodedPath" />
+              <div style="display: flex; align-items: center;">
+                <div style="width: 80px; height: 80px; margin-right: 10px;">
+                  ${generatePreviewHTML(encodedPath, name)}
+                </div>
+                <a href="$href">$icon $name</a>
+              </div>
+            </li>
+            """.trimIndent())
         }
 
             append("""
@@ -164,6 +172,17 @@ class HTTPServer(
             newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "File not found.")
         }
     }
+
+    private fun serveRawFile(file: File): Response {
+        return if (file.exists() && file.isFile) {
+            val mime = URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
+            val inputStream = FileInputStream(file)
+            newChunkedResponse(Response.Status.OK, mime, inputStream)
+        } else {
+            newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "File not found.")
+        }
+    }
+
     private fun addFileToZip(file: File, zipPath: String, zipOut: ZipOutputStream) {
         zipOut.putNextEntry(ZipEntry(zipPath))
         file.inputStream().use { it.copyTo(zipOut) }
@@ -282,4 +301,22 @@ class HTTPServer(
         }
     }
 
+    private fun generatePreviewHTML(encodedPath: String, fileName: String): String {
+        val lower = fileName.lowercase()
+        return when {
+            lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".gif") || lower.endsWith(".webp") ->
+                """<img src="/preview/$encodedPath" style="max-width: 100%; max-height: 100%;" />"""
+
+            lower.endsWith(".mp4") || lower.endsWith(".webm") ->
+                """<video src="/preview/$encodedPath" style="max-width: 100%; max-height: 100%;" muted autoplay loop></video>"""
+
+            lower.endsWith(".mp3") || lower.endsWith(".ogg") ->
+                """<audio src="/preview/$encodedPath" controls style="width: 100%;"></audio>"""
+
+            lower.endsWith(".pdf") ->
+                """<embed src="/preview/$encodedPath" type="application/pdf" width="100%" height="100%" />"""
+
+            else -> ""
+        }
+    }
 }

@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.0.10 ===",
+            "=== HTTP File Manager v1.0.11 ===",
             "=== (c) zsoltk130 -- Aug/2025 ==="
         )
 
