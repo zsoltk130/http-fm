@@ -98,6 +98,31 @@ class HTTPServer(
                     .back {
                         color: #ffb347;
                     }
+                    .grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                        gap: 20px;
+                        padding: 0;
+                        margin-top: 20px;
+                    }
+                    .entry {
+                        background-color: #2e2e2e;
+                        border-radius: 10px;
+                        padding: 10px;
+                        text-align: center;
+                        color: #c7fdbb;
+                        overflow: hidden;
+                    }
+                    .entry img, .entry video, .entry audio, .entry embed {
+                        width: 100%;
+                        height: 100px;
+                        object-fit: cover;
+                        border-radius: 6px;
+                        margin-bottom: 8px;
+                    }
+                    .entry input[type="checkbox"] {
+                        margin-bottom: 6px;
+                    }
                 </style>
             </head>
             <body>
@@ -114,7 +139,7 @@ class HTTPServer(
 
             append("""
                 <form method="POST" action="/download-multiple">
-                <ul>
+                <div class="grid">
             """.trimIndent())
 
         // List items
@@ -126,24 +151,20 @@ class HTTPServer(
             val href = if (file.isDirectory) "/browse/$encodedPath" else "/download/$encodedPath"
 
             append("""
-            <li>
+            <div class="entry">
               <input type="checkbox" name="selected" value="$encodedPath" />
-              <div style="display: flex; align-items: center;">
-                <div style="width: 80px; height: 80px; margin-right: 10px;">
-                  ${generatePreviewHTML(encodedPath, name)}
-                </div>
-                <a href="$href">$icon $name</a>
+              <div>
+                ${generatePreviewHTML(encodedPath, name)}
               </div>
-            </li>
+              <a href="$href">$icon $name</a>
+            </div>
             """.trimIndent())
         }
 
             append("""
-                </ul>
-                    <button type="submit">Download Selected</button>
-                </form>
-                </body>
-                </html>
+                </div>
+                <button type="submit">Download Selected</button>
+            </form>
             """.trimIndent())
 
             append("""
