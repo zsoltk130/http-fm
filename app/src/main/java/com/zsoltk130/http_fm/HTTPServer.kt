@@ -62,7 +62,6 @@ class HTTPServer(
     // Build HTML to display contents of the phone's storage to user
     private fun listContentsInDirectory(dir: File, relPath: String = ""): Response {
         val files = dir.listFiles()?.toList() ?: return newFixedLengthResponse("No files found.")
-        // Build HTML, start by defining style
         val html = buildString {
             append("""
             <html>
@@ -125,6 +124,12 @@ class HTTPServer(
                     .entry input[type="checkbox"] {
                         margin-bottom: 6px;
                     }
+                    .icon {
+                        font-size: 4em; /* Adjust size as needed */
+                        display: block;
+                        margin-bottom: 8px;
+                        color: #c7fdbb; /* Icon color */
+                    }
                 </style>
                 <script>
                 function uploadFiles() {
@@ -132,13 +137,13 @@ class HTTPServer(
                     const formData = new FormData(form);
                     const progressBar = document.getElementById('progressBar');
                     const statusDiv = document.getElementById('uploadStatus');
-                    
+
                     // Show progress bar
                     progressBar.style.display = 'block';
                     statusDiv.innerHTML = 'Uploading...';
-                    
+
                     const xhr = new XMLHttpRequest();
-                    
+
                     // Track upload progress
                     xhr.upload.addEventListener('progress', function(e) {
                         if (e.lengthComputable) {
@@ -147,7 +152,7 @@ class HTTPServer(
                             statusDiv.innerHTML = 'Uploading... ' + Math.round(percentComplete) + '%';
                         }
                     });
-                    
+
                     // Handle completion
                     xhr.addEventListener('load', function() {
                         if (xhr.status === 200) {
@@ -160,10 +165,10 @@ class HTTPServer(
                         }
                         progressBar.style.display = 'none';
                     });
-                    
+
                     xhr.open('POST', '/upload');
                     xhr.send(formData);
-                    
+
                     return false; // Prevent normal form submission
                 }
                 </script>
@@ -173,41 +178,46 @@ class HTTPServer(
                 <ul>
             """.trimIndent())
 
-        // Back link
-        if (dir != rootDir) {
-            val parentRelPath = File(relPath).parent ?: ""
-            val encoded = URLEncoder.encode(parentRelPath, "UTF-8")
-            append("<a class=\"back\" href=\"/browse/$encoded\">⬅️ .. (previous)</a>")
-        }
+            // Back link
+            if (dir != rootDir) {
+                val parentRelPath = File(relPath).parent ?: ""
+                val encoded = URLEncoder.encode(parentRelPath, "UTF-8")
+                append("<a class=\"back\" href=\"/browse/$encoded\">⬅️ .. (previous)</a>")
+            }
 
             append("""
                 <form method="POST" action="/download-multiple">
                 <div class="grid">
             """.trimIndent())
 
-        // List items
-        for (file in files.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))) {
-            val name = file.name
-            val path = if (relPath.isBlank()) name else "$relPath/$name"
-            val encodedPath = URLEncoder.encode(path, "UTF-8")
-            val icon = if (file.isDirectory) "📁" else "📄"
-            val href = if (file.isDirectory) "/browse/$encodedPath" else "/download/$encodedPath"
+            // List items
+            for (file in files.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))) {
+                val name = file.name
+                val path = if (relPath.isBlank()) name else "$relPath/$name"
+                val encodedPath = URLEncoder.encode(path, "UTF-8")
+                // Use generatePreviewHTML for files, and the folder icon for directories
+                val displayElement = if (file.isDirectory) {
+                    "<span class=\"icon\">&#128193;</span>" // Folder icon
+                } else {
+                    generatePreviewHTML(encodedPath, name) // Preview or file icon
+                }
+                val href = if (file.isDirectory) "/browse/$encodedPath" else "/download/$encodedPath"
 
-            append("""
-            <div class="entry">
-              <input type="checkbox" name="selected" value="$encodedPath" />
-              <div>
-                ${generatePreviewHTML(encodedPath, name)}
-              </div>
-              <a href="$href">$icon $name</a>
-            </div>
-            """.trimIndent())
-        }
+                append("""
+                <div class="entry">
+                  <input type="checkbox" name="selected" value="$encodedPath" />
+                  <div>
+                    $displayElement
+                  </div>
+                  <a href="$href">$name</a>
+                </div>
+                """.trimIndent())
+            }
 
             append("""
                 </div>
                 <button type="submit">Download Selected</button>
-            </form>
+                </form>
             """.trimIndent())
 
             append("""
@@ -372,21 +382,15 @@ class HTTPServer(
     }
 
     private fun generatePreviewHTML(encodedPath: String, fileName: String): String {
-        val lower = fileName.lowercase()
+        val previewUrl = "/preview/$encodedPath"
+        val mimeType = URLConnection.guessContentTypeFromName(fileName) ?: "application/octet-stream"
+
         return when {
-            lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".gif") || lower.endsWith(".webp") ->
-                """<img src="/preview/$encodedPath" style="max-width: 100%; max-height: 100%;" />"""
-
-            lower.endsWith(".mp4") || lower.endsWith(".webm") ->
-                """<video src="/preview/$encodedPath" style="max-width: 100%; max-height: 100%;" muted autoplay loop></video>"""
-
-            lower.endsWith(".mp3") || lower.endsWith(".ogg") ->
-                """<audio src="/preview/$encodedPath" controls style="width: 100%;"></audio>"""
-
-            lower.endsWith(".pdf") ->
-                """<embed src="/preview/$encodedPath" type="application/pdf" width="100%" height="100%" />"""
-
-            else -> ""
+            mimeType.startsWith("image/") -> """<img src="$previewUrl" alt="$fileName">"""
+            mimeType.startsWith("video/") -> """<video controls><source src="$previewUrl" type="$mimeType">Your browser does not support the video tag.</video>"""
+            mimeType.startsWith("audio/") -> """<audio controls><source src="$previewUrl" type="$mimeType">Your browser does not support the audio tag.</audio>"""
+            // Add a generic file icon for other file types
+            else -> """<span class="icon">&#128196;</span>""" // Unicode for file icon
         }
     }
 }
