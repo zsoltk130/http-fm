@@ -34,8 +34,8 @@ class MainActivity : ComponentActivity() {
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.1.0 ===",
-            "=== (c) zsoltk130 -- Aug/2025 ==="
+            "=== HTTP File Manager v1.2.0 ===",
+            "=== (c) zsoltk130 - Aug/2025 ==="
         )
 
         // Permissions check
@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Define user interface
+// Define mobile UI
 @Composable
 fun FileManagerUI(
     logs: List<String>,

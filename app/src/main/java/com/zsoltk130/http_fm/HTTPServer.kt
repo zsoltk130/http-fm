@@ -59,8 +59,10 @@ class HTTPServer(
         }
     }
 
+    // Build HTML to display contents of the phone's storage to user
     private fun listContentsInDirectory(dir: File, relPath: String = ""): Response {
         val files = dir.listFiles()?.toList() ?: return newFixedLengthResponse("No files found.")
+        // Build HTML, start by defining style
         val html = buildString {
             append("""
             <html>
@@ -124,6 +126,47 @@ class HTTPServer(
                         margin-bottom: 6px;
                     }
                 </style>
+                <script>
+                function uploadFiles() {
+                    const form = document.getElementById('uploadForm');
+                    const formData = new FormData(form);
+                    const progressBar = document.getElementById('progressBar');
+                    const statusDiv = document.getElementById('uploadStatus');
+                    
+                    // Show progress bar
+                    progressBar.style.display = 'block';
+                    statusDiv.innerHTML = 'Uploading...';
+                    
+                    const xhr = new XMLHttpRequest();
+                    
+                    // Track upload progress
+                    xhr.upload.addEventListener('progress', function(e) {
+                        if (e.lengthComputable) {
+                            const percentComplete = (e.loaded / e.total) * 100;
+                            progressBar.value = percentComplete;
+                            statusDiv.innerHTML = 'Uploading... ' + Math.round(percentComplete) + '%';
+                        }
+                    });
+                    
+                    // Handle completion
+                    xhr.addEventListener('load', function() {
+                        if (xhr.status === 200) {
+                            statusDiv.innerHTML = 'Upload successful!';
+                            form.reset();
+                            // Refresh the page after a short delay
+                            setTimeout(() => location.reload(), 1000);
+                        } else {
+                            statusDiv.innerHTML = 'Upload failed!';
+                        }
+                        progressBar.style.display = 'none';
+                    });
+                    
+                    xhr.open('POST', '/upload');
+                    xhr.send(formData);
+                    
+                    return false; // Prevent normal form submission
+                }
+                </script>
             </head>
             <body>
                 <h2>Files in /$relPath</h2>
@@ -168,10 +211,12 @@ class HTTPServer(
             """.trimIndent())
 
             append("""
-                <form method="POST" action="/upload" enctype="multipart/form-data">
+                <form id="uploadForm" onsubmit="return uploadFiles()">
                     <input type="file" name="file" multiple />
                     <input type="hidden" name="path" value="$relPath" />
                     <button type="submit">Upload</button>
+                    <progress id="progressBar" value="0" max="100" style="display:none; width: 100%; margin-top: 10px;"></progress>
+                    <div id="uploadStatus"></div>
                 </form>
             """.trimIndent())
         }
@@ -179,6 +224,7 @@ class HTTPServer(
         return newFixedLengthResponse(Response.Status.OK, "text/html", html)
     }
 
+    // File download
     private fun serveFile(file: File): Response {
         return if (file.exists() && file.isFile) {
             val mime = URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
@@ -194,6 +240,7 @@ class HTTPServer(
         }
     }
 
+    // File preview
     private fun serveRawFile(file: File): Response {
         return if (file.exists() && file.isFile) {
             val mime = URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
@@ -222,6 +269,7 @@ class HTTPServer(
         }
     }
 
+    // Multi-file download
     private fun handleMultiDownload(session: IHTTPSession): Response {
         session.parseBody(mutableMapOf()) // Parse POST data
 
@@ -279,6 +327,7 @@ class HTTPServer(
         return response
     }
 
+    // File upload
     private fun handleFileUpload(session: IHTTPSession): Response {
         val files = mutableMapOf<String, String>()
 
