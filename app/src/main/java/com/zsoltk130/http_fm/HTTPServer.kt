@@ -26,6 +26,7 @@ class HTTPServer(
             log("Request from $clientIP to $uri")
         }
 
+        // HTML Handlers
         return when {
             uri == "/" -> listContentsInDirectory(rootDir)
 
@@ -130,49 +131,62 @@ class HTTPServer(
                         margin-bottom: 8px;
                         color: #c7fdbb; /* Icon color */
                     }
+                    button {
+                        margin-top: 20px;
+                        background: #78e2a0;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                    }
+                    button:hover {
+                        background: #9eff7c;
+                    }
                 </style>
+                
                 <script>
-                function uploadFiles() {
-                    const form = document.getElementById('uploadForm');
-                    const formData = new FormData(form);
-                    const progressBar = document.getElementById('progressBar');
-                    const statusDiv = document.getElementById('uploadStatus');
-
-                    // Show progress bar
-                    progressBar.style.display = 'block';
-                    statusDiv.innerHTML = 'Uploading...';
-
-                    const xhr = new XMLHttpRequest();
-
-                    // Track upload progress
-                    xhr.upload.addEventListener('progress', function(e) {
-                        if (e.lengthComputable) {
-                            const percentComplete = (e.loaded / e.total) * 100;
-                            progressBar.value = percentComplete;
-                            statusDiv.innerHTML = 'Uploading... ' + Math.round(percentComplete) + '%';
-                        }
-                    });
-
-                    // Handle completion
-                    xhr.addEventListener('load', function() {
-                        if (xhr.status === 200) {
-                            statusDiv.innerHTML = 'Upload successful!';
-                            form.reset();
-                            // Refresh the page after a short delay
-                            setTimeout(() => location.reload(), 1000);
-                        } else {
-                            statusDiv.innerHTML = 'Upload failed!';
-                        }
-                        progressBar.style.display = 'none';
-                    });
-
-                    xhr.open('POST', '/upload');
-                    xhr.send(formData);
-
-                    return false; // Prevent normal form submission
-                }
+                    function uploadFiles() {
+                        const form = document.getElementById('uploadForm');
+                        const formData = new FormData(form);
+                        const progressBar = document.getElementById('progressBar');
+                        const statusDiv = document.getElementById('uploadStatus');
+    
+                        // Show progress bar
+                        progressBar.style.display = 'block';
+                        statusDiv.innerHTML = 'Uploading...';
+    
+                        const xhr = new XMLHttpRequest();
+    
+                        // Track upload progress
+                        xhr.upload.addEventListener('progress', function(e) {
+                            if (e.lengthComputable) {
+                                const percentComplete = (e.loaded / e.total) * 100;
+                                progressBar.value = percentComplete;
+                                statusDiv.innerHTML = 'Uploading... ' + Math.round(percentComplete) + '%';
+                            }
+                        });
+    
+                        // Handle completion
+                        xhr.addEventListener('load', function() {
+                            if (xhr.status === 200) {
+                                statusDiv.innerHTML = 'Upload successful!';
+                                form.reset();
+                                // Refresh the page after a short delay
+                                setTimeout(() => location.reload(), 1000);
+                            } else {
+                                statusDiv.innerHTML = 'Upload failed!';
+                            }
+                            progressBar.style.display = 'none';
+                        });
+    
+                        xhr.open('POST', '/upload');
+                        xhr.send(formData);
+    
+                        return false; // Prevent normal form submission
+                    }
                 </script>
             </head>
+            
             <body>
                 <h2>Files in /$relPath</h2>
                 <ul>
@@ -386,9 +400,10 @@ class HTTPServer(
         val mimeType = URLConnection.guessContentTypeFromName(fileName) ?: "application/octet-stream"
 
         return when {
-            mimeType.startsWith("image/") -> """<img src="$previewUrl" alt="$fileName">"""
-            mimeType.startsWith("video/") -> """<video controls><source src="$previewUrl" type="$mimeType">Your browser does not support the video tag.</video>"""
-            mimeType.startsWith("audio/") -> """<audio controls><source src="$previewUrl" type="$mimeType">Your browser does not support the audio tag.</audio>"""
+            mimeType.startsWith("image/") -> """<img src="$previewUrl" alt="$fileName" loading="lazy">"""
+            mimeType.startsWith("video/") -> """<video controls preload="metadata" loading="lazy"><source src="$previewUrl" type="$mimeType">Your browser does not support the video tag.</video>"""
+            mimeType.startsWith("audio/") -> """<audio controls preload="metadata"><source src="$previewUrl" type="$mimeType">Your browser does not support the audio tag.</audio>"""
+
             // Add a generic file icon for other file types
             else -> """<span class="icon">&#128196;</span>""" // Unicode for file icon
         }

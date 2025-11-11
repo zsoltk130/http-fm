@@ -13,7 +13,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "1.2.3"
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -49,7 +49,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation(libs.nanohttpd)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
