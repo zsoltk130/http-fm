@@ -142,6 +142,25 @@ class HTTPServer(
                     button:hover {
                         background: #9eff7c;
                     }
+                    .video-placeholder {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        height: 120px;
+                        background-color: #2e2e2e;
+                        border-radius: 10px;
+                        cursor: pointer;
+                        color: #78e2a0;
+                        font-size: 1.5em;
+                        transition: background-color 0.3s;
+                    }
+                    .video-placeholder:hover {
+                        background-color: #3a3a3a;
+                    }
+                    .video-placeholder .icon {
+                        font-size: 3em;
+                    }
                 </style>
                 
                 <script>
@@ -184,6 +203,36 @@ class HTTPServer(
     
                         return false; // Prevent normal form submission
                     }
+                    
+                    document.addEventListener("DOMContentLoaded", function() {
+                        // Lazy-load images, videos, and audio
+                        const lazyMedia = document.querySelectorAll('img.lazy, video.lazy-video, audio.lazy-audio');
+                        const observer = new IntersectionObserver(entries => {
+                            entries.forEach(entry => {
+                                if (entry.isIntersecting) {
+                                    const el = entry.target;
+                                    if (el.dataset.src) el.src = el.dataset.src;
+                                    el.classList.remove('lazy', 'lazy-video', 'lazy-audio');
+                                    observer.unobserve(el);
+                                }
+                            });
+                        });
+                        lazyMedia.forEach(el => observer.observe(el));
+
+                        // Handle large video placeholders
+                        document.querySelectorAll('.video-placeholder').forEach(placeholder => {
+                            placeholder.addEventListener('click', () => {
+                                const videoUrl = placeholder.dataset.src;
+                                const container = document.createElement('div');
+                                container.innerHTML = `
+                                    <video controls autoplay style="width:100%; height:auto;">
+                                        <source src="${'$'}{videoUrl}">
+                                        Your browser does not support video playback.
+                                    </video>`;
+                                placeholder.replaceWith(container);
+                            });
+                        });
+                    });
                 </script>
             </head>
             
@@ -398,14 +447,37 @@ class HTTPServer(
     private fun generatePreviewHTML(encodedPath: String, fileName: String): String {
         val previewUrl = "/preview/$encodedPath"
         val mimeType = URLConnection.guessContentTypeFromName(fileName) ?: "application/octet-stream"
+        val file = File(rootDir, URLDecoder.decode(encodedPath, "UTF-8"))
 
         return when {
-            mimeType.startsWith("image/") -> """<img src="$previewUrl" alt="$fileName" loading="lazy">"""
-            mimeType.startsWith("video/") -> """<video controls preload="metadata" loading="lazy"><source src="$previewUrl" type="$mimeType">Your browser does not support the video tag.</video>"""
-            mimeType.startsWith("audio/") -> """<audio controls preload="metadata"><source src="$previewUrl" type="$mimeType">Your browser does not support the audio tag.</audio>"""
+            mimeType.startsWith("image/") -> """
+            <img data-src="$previewUrl" alt="$fileName" class="lazy" loading="lazy">
+        """
 
-            // Add a generic file icon for other file types
-            else -> """<span class="icon">&#128196;</span>""" // Unicode for file icon
+            mimeType.startsWith("video/") -> {
+                val sizeMB = file.length() / (1024.0 * 1024.0)
+                if (sizeMB > 50) {
+                    // Show a static thumbnail or placeholder instead of loading
+                    """
+                <div class="video-placeholder" data-src="$previewUrl" data-name="$fileName">
+                    <span class="icon">&#9658;</span><br>
+                    <small>${"%.1f".format(sizeMB)} MB (click to preview)</small>
+                </div>
+                """
+                } else {
+                    """
+                <video class="lazy-video" data-src="$previewUrl" controls preload="none">
+                    Your browser does not support the video tag.
+                </video>
+                """
+                }
+            }
+
+            mimeType.startsWith("audio/") -> """
+            <audio class="lazy-audio" data-src="$previewUrl" controls preload="none"></audio>
+        """
+
+            else -> """<span class="icon">&#128196;</span>""" // generic file icon
         }
     }
 }
