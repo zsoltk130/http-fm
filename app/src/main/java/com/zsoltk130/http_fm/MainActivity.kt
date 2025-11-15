@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,15 +30,18 @@ class MainActivity : ComponentActivity() {
     private var server: HTTPServer? = null
     private val logs = mutableStateListOf<String>()
 
+    // Status indicators
+    private var isServerRunning by mutableStateOf(false)
+    private var isHttpsEnabled by mutableStateOf(false)       // future feature
+    private var isPasswordedEnabled by mutableStateOf(false)  // future feature
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Display initial text
         logs += listOf(
-            "******************************",
-            "=== HTTP File Manager v1.3.1 ===",
-            "=== (c) zsoltk130   Nov/2025 ===",
-            "******************************"
+            "=== HTTP File Manager v1.4.0 ===",
+            "=== (c) zsoltk130   Nov/2025 ==="
         )
 
         // Permissions check
@@ -62,11 +66,18 @@ class MainActivity : ComponentActivity() {
             FileManagerUI(
                 logs = logs,
                 onStartServer = {
+                    if (isServerRunning) {
+                        logs += "Server is already running!"
+                        return@FileManagerUI
+                    }
+
                     try {
                         server = HTTPServer(this, homeDir) { message ->
                             logs += message
                         }
                         server?.start()
+
+                        isServerRunning = true
                         logs += "Server started on port 8080"
                     } catch (e: Exception) {
                         logs += "ERROR: Server failed to start: ${e.message}"
@@ -75,8 +86,13 @@ class MainActivity : ComponentActivity() {
                 onExitApp = {
                     server?.closeAllConnections()
                     server?.stop()
+                    isServerRunning = false
+
                     finish()
-                }
+                },
+                isEnabled = isServerRunning,
+                isHttps = isHttpsEnabled,
+                isPassworded = isPasswordedEnabled
             )
         }
     }
@@ -87,7 +103,10 @@ class MainActivity : ComponentActivity() {
 fun FileManagerUI(
     logs: List<String>,
     onStartServer: () -> Unit,
-    onExitApp: () -> Unit
+    onExitApp: () -> Unit,
+    isEnabled: Boolean,
+    isHttps: Boolean,
+    isPassworded: Boolean
 ) {
     Column(
         modifier = Modifier
@@ -95,6 +114,17 @@ fun FileManagerUI(
             .background(Color(0xFF002C00))
             .padding(16.dp)
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            StatusIndicator("Enabled", isEnabled)
+            StatusIndicator("HTTPS", isHttps)
+            StatusIndicator("Passworded", isPassworded)
+        }
+
         // Text display area
         val scrollState = rememberScrollState()
         Column(
@@ -144,5 +174,26 @@ fun FileManagerUI(
                 Text("Exit")
             }
         }
+    }
+}
+
+@Composable
+fun StatusIndicator(label: String, active: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .background(
+                    if (active) Color(0xFF00FF00) else Color(0xFFFF0000),
+                    shape = CircleShape
+                )
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = label,
+            color = Color(0xFF008000),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 14.sp
+        )
     }
 }
