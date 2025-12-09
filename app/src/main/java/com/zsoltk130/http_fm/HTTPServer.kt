@@ -17,9 +17,9 @@ class HTTPServer(
     private val context: Context,
     private val rootDir: File = Environment.getExternalStorageDirectory(),
     private val isPasswordProtected: Boolean,
+    private val accessToken: String?,
     private val log: (String) -> Unit
 ) : NanoHTTPD(8080) {
-    private val accessToken = "123456" // later generate randomly
     private val authorisedClients = mutableSetOf<String>()
 
     override fun serve(session: IHTTPSession): Response {

@@ -37,6 +37,8 @@ class MainActivity : ComponentActivity() {
     private var server: HTTPServer? = null
     private val logs = mutableStateListOf<String>()
 
+    private var accessToken: String? = null
+
     // Status indicators
     private var isServerRunning by mutableStateOf(false)
     private var isPasswordedEnabled by mutableStateOf(false)
@@ -46,7 +48,7 @@ class MainActivity : ComponentActivity() {
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.5.4 ===",
+            "=== HTTP File Manager v1.5.5 ===",
             "=== (c) zsoltk130   Dec/2025 ==="
         )
 
@@ -77,7 +79,8 @@ class MainActivity : ComponentActivity() {
                             server = HTTPServer(
                                 this,
                                 homeDir,
-                                isPasswordProtected = isPasswordedEnabled
+                                isPasswordProtected = isPasswordedEnabled,
+                                accessToken = accessToken
                             ) { message ->
                                 logs += message
                             }
@@ -104,15 +107,28 @@ class MainActivity : ComponentActivity() {
                     finish()
                 },
                 onPasswordToggle = { newPasswordState ->
-                    isPasswordedEnabled = newPasswordState // Update the state variable
-                    val status = if (newPasswordState) "enabled" else "disabled"
-                    logs += "[${nowTimestamp()}] Password protection $status"
+                    isPasswordedEnabled = newPasswordState
+                    if (newPasswordState) {
+                        accessToken = generateAccessToken()
+                        logs += "[${nowTimestamp()}] Password protection ENABLED"
+                        logs += "[${nowTimestamp()}] Access token: $accessToken"
+                    } else {
+                        accessToken = null
+                        logs += "[${nowTimestamp()}] Password protection DISABLED"
+                    }
                 },
                 isEnabled = isServerRunning,
                 isPassworded = isPasswordedEnabled
             )
         }
     }
+}
+
+fun generateAccessToken(length: Int = 6): String {
+    val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    return (1..length)
+        .map { chars.random() }
+        .joinToString("")
 }
 
 private fun nowTimestamp(): String {
@@ -254,7 +270,7 @@ fun FileManagerUIPreview() {
 
     val sampleLogs = remember {
         mutableStateListOf(
-            "=== HTTP File Manager v1.5.3 ===",
+            "=== HTTP File Manager v1.5.5 ===",
             "=== (c) zsoltk130   Dec/2025 ===",
             "[$formattedTime] Server started on port 8080",
             "[$formattedTime] GET / - 200 OK",
@@ -272,15 +288,13 @@ fun FileManagerUIPreview() {
         onStartServer = {
             if (!isServerRunning) {
                 sampleLogs.add("Server started on port 8080")
-                isServerRunning = true
             }
         },
         onExitApp = {
             sampleLogs.add("Server stopped.")
-            isServerRunning = false
         },
         onPasswordToggle = {
-            isPasswordedPreview = it // 'it' is the new boolean state
+
         },
         isEnabled = isServerRunning,
         isPassworded = isPasswordedPreview
