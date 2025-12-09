@@ -8,22 +8,37 @@ import java.io.FileInputStream
 import java.net.URLConnection
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class HTTPServer(
     private val context: Context,
     private val rootDir: File = Environment.getExternalStorageDirectory(),
+    private val isPasswordProtected: Boolean,
     private val log: (String) -> Unit
 ) : NanoHTTPD(8080) {
+    private val accessToken = "123456" // later generate randomly
+    private val authorisedClients = mutableSetOf<String>()
 
     override fun serve(session: IHTTPSession): Response {
         val clientIP = session.remoteIpAddress
+
+        if (isPasswordProtected && !isAuthorised(session, clientIP)) {
+            return servePasswordPage()
+        }
+
         val uri = session.uri
+
+        // Time formatting
+        val time = ZonedDateTime.now()
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        val formattedTime = time.format(formatter)
 
         // Log accesses
         if (uri != "/favicon.ico") {
-            log("Request from $clientIP to $uri")
+            log("[$formattedTime] Request from $clientIP to $uri")
         }
 
         // HTML Handlers
@@ -58,6 +73,83 @@ class HTTPServer(
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "404 Not Found")
         }
+    }
+
+    private fun isAuthorised(session: IHTTPSession, clientIP: String): Boolean {
+        val token = session.parms["token"]
+
+        if (token == accessToken) {
+            authorisedClients.add(clientIP)
+            return true
+        }
+
+        return authorisedClients.contains(clientIP)
+    }
+
+    private fun servePasswordPage(): Response {
+        val html = """
+        <html>
+        <head>
+            <title>http-fm – Access Required</title>
+            <style>
+                body {
+                    margin: 0;
+                    height: 100vh;
+                    background-color: #1e1e1e;
+                    color: #c7fdbb;
+                    font-family: monospace;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+
+                .container {
+                    text-align: center;
+                    background-color: #2e2e2e;
+                    padding: 30px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+                }
+
+                input {
+                    width: 200px;
+                    padding: 10px;
+                    background: #1e1e1e;
+                    border: 1px solid #78e2a0;
+                    color: #c7fdbb;
+                    text-align: center;
+                    font-size: 16px;
+                }
+
+                button {
+                    margin-top: 15px;
+                    padding: 10px 25px;
+                    background: #78e2a0;
+                    border: none;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-weight: bold;
+                }
+
+                button:hover {
+                    background: #9eff7c;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>Access Required</h2>
+                <form method="GET" action="/">
+                    <input type="password" name="token" placeholder="Enter access token" required />
+                    <br/>
+                    <button type="submit">Enter</button>
+                </form>
+            </div>
+        </body>
+        </html>
+    """.trimIndent()
+
+        return newFixedLengthResponse(Response.Status.OK, "text/html", html)
     }
 
     // Build HTML to display contents of the phone's storage to user
@@ -126,10 +218,10 @@ class HTTPServer(
                         margin-bottom: 6px;
                     }
                     .icon {
-                        font-size: 4em; /* Adjust size as needed */
+                        font-size: 4em;
                         display: block;
                         margin-bottom: 8px;
-                        color: #c7fdbb; /* Icon color */
+                        color: #c7fdbb;
                     }
                     button {
                         margin-top: 20px;

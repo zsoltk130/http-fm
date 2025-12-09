@@ -16,15 +16,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
     private var server: HTTPServer? = null
@@ -32,16 +39,15 @@ class MainActivity : ComponentActivity() {
 
     // Status indicators
     private var isServerRunning by mutableStateOf(false)
-    private var isHttpsEnabled by mutableStateOf(false)       // future feature
-    private var isPasswordedEnabled by mutableStateOf(false)  // future feature
+    private var isPasswordedEnabled by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.4.0 ===",
-            "=== (c) zsoltk130   Nov/2025 ==="
+            "=== HTTP File Manager v1.5.4 ===",
+            "=== (c) zsoltk130   Dec/2025 ==="
         )
 
         // Permissions check
@@ -65,22 +71,29 @@ class MainActivity : ComponentActivity() {
         setContent {
             FileManagerUI(
                 logs = logs,
-                onStartServer = {
-                    if (isServerRunning) {
-                        logs += "Server is already running!"
-                        return@FileManagerUI
-                    }
+                onStartServer = { newRunState ->
+                    if (newRunState && !isServerRunning) {
+                        try {
+                            server = HTTPServer(
+                                this,
+                                homeDir,
+                                isPasswordProtected = isPasswordedEnabled
+                            ) { message ->
+                                logs += message
+                            }
+                            server?.start()
+                            isServerRunning = true
+                            logs += "[${nowTimestamp()}] Server started on port 8080"
 
-                    try {
-                        server = HTTPServer(this, homeDir) { message ->
-                            logs += message
+                        } catch (e: Exception) {
+                            logs += "[${nowTimestamp()}] ERROR: ${e.message}"
                         }
-                        server?.start()
 
-                        isServerRunning = true
-                        logs += "Server started on port 8080"
-                    } catch (e: Exception) {
-                        logs += "ERROR: Server failed to start: ${e.message}"
+                    } else if (!newRunState && isServerRunning) {
+                        server?.closeAllConnections()
+                        server?.stop()
+                        isServerRunning = false
+                        logs += "[${nowTimestamp()}] Server stopped"
                     }
                 },
                 onExitApp = {
@@ -90,22 +103,31 @@ class MainActivity : ComponentActivity() {
 
                     finish()
                 },
+                onPasswordToggle = { newPasswordState ->
+                    isPasswordedEnabled = newPasswordState // Update the state variable
+                    val status = if (newPasswordState) "enabled" else "disabled"
+                    logs += "[${nowTimestamp()}] Password protection $status"
+                },
                 isEnabled = isServerRunning,
-                isHttps = isHttpsEnabled,
                 isPassworded = isPasswordedEnabled
             )
         }
     }
 }
 
+private fun nowTimestamp(): String {
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    return ZonedDateTime.now().format(formatter)
+}
+
 // Define mobile UI
 @Composable
 fun FileManagerUI(
     logs: List<String>,
-    onStartServer: () -> Unit,
+    onStartServer: (Boolean) -> Unit,
     onExitApp: () -> Unit,
+    onPasswordToggle: (Boolean) -> Unit,
     isEnabled: Boolean,
-    isHttps: Boolean,
     isPassworded: Boolean
 ) {
     Column(
@@ -114,15 +136,50 @@ fun FileManagerUI(
             .background(Color(0xFF002C00))
             .padding(16.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            StatusIndicator("Enabled", isEnabled)
-            StatusIndicator("HTTPS", isHttps)
-            StatusIndicator("Passworded", isPassworded)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween // This pushes the items to opposite ends
+            ) {
+                StatusIndicator("Enabled", isEnabled)
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = onStartServer, // Call the lambda when toggled
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color(0xFF00FF00),
+                        checkedTrackColor = Color(0xFF008000),
+                        checkedBorderColor = Color(0xFF008000),
+                        uncheckedThumbColor = Color(0xFF004C00),
+                        uncheckedTrackColor = Color(0xFF111711),
+                        uncheckedBorderColor = Color(0xFF111711)
+                    )
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween // This pushes the items to opposite ends
+            ) {
+                StatusIndicator("Passworded", isPassworded)
+                Switch(
+                    checked = isPassworded,
+                    onCheckedChange = onPasswordToggle, // Call the lambda when toggled
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color(0xFF00FF00),
+                        checkedTrackColor = Color(0xFF008000),
+                        checkedBorderColor = Color(0xFF008000),
+                        uncheckedThumbColor = Color(0xFF004C00),
+                        uncheckedTrackColor = Color(0xFF111711),
+                        uncheckedBorderColor = Color(0xFF111711)
+                    )
+                )
+            }
         }
 
         // Text display area
@@ -139,7 +196,7 @@ fun FileManagerUI(
                 Text(
                     text = line,
                     color = Color(0xFF008000),
-                    fontSize = 16.sp,
+                    fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -152,17 +209,6 @@ fun FileManagerUI(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            Button(
-                onClick = onStartServer,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = Color(0xFF008000)
-                ),
-                border = BorderStroke(1.dp, Color(0xFF008000))
-            ) {
-                Text("Start")
-            }
-
             Button(
                 onClick = onExitApp,
                 colors = ButtonDefaults.buttonColors(
@@ -188,12 +234,55 @@ fun StatusIndicator(label: String, active: Boolean) {
                     shape = CircleShape
                 )
         )
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         Text(
             text = label,
             color = Color(0xFF008000),
             fontFamily = FontFamily.Monospace,
-            fontSize = 14.sp
+            fontSize = 16.sp
         )
     }
+}
+
+@Preview(showBackground = true, name = "File Manager UI Preview")
+@Composable
+fun FileManagerUIPreview() {
+
+    val time = ZonedDateTime.now()
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    val formattedTime = time.format(formatter)
+
+    val sampleLogs = remember {
+        mutableStateListOf(
+            "=== HTTP File Manager v1.5.3 ===",
+            "=== (c) zsoltk130   Dec/2025 ===",
+            "[$formattedTime] Server started on port 8080",
+            "[$formattedTime] GET / - 200 OK",
+            "[$formattedTime] GET /styles.css - 200 OK",
+            "[$formattedTime] GET /some-image.jpg - 200 OK",
+            "[$formattedTime] POST /upload - 401 Unauthorized"
+        )
+    }
+    
+    var isServerRunning by remember { mutableStateOf(true) }
+    var isPasswordedPreview by remember { mutableStateOf(true) }
+
+    FileManagerUI(
+        logs = sampleLogs,
+        onStartServer = {
+            if (!isServerRunning) {
+                sampleLogs.add("Server started on port 8080")
+                isServerRunning = true
+            }
+        },
+        onExitApp = {
+            sampleLogs.add("Server stopped.")
+            isServerRunning = false
+        },
+        onPasswordToggle = {
+            isPasswordedPreview = it // 'it' is the new boolean state
+        },
+        isEnabled = isServerRunning,
+        isPassworded = isPasswordedPreview
+    )
 }
