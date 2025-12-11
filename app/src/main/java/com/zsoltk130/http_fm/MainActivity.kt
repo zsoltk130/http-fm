@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
@@ -30,14 +31,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import java.security.SecureRandom
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+
 
 class MainActivity : ComponentActivity() {
     private var server: HTTPServer? = null
     private val logs = mutableStateListOf<String>()
-
     private var accessToken: String? = null
+    lateinit var encryptionKey: ByteArray
 
     // Status indicators
     private var isServerRunning by mutableStateOf(false)
@@ -48,7 +51,7 @@ class MainActivity : ComponentActivity() {
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.5.5 ===",
+            "=== HTTP File Manager v1.6.0 ===",
             "=== (c) zsoltk130   Dec/2025 ==="
         )
 
@@ -74,16 +77,22 @@ class MainActivity : ComponentActivity() {
             FileManagerUI(
                 logs = logs,
                 onStartServer = { newRunState ->
+                    // Generate new AES-256 key each time server starts
+                    encryptionKey = ByteArray(32).also { SecureRandom().nextBytes(it) }
+
+                    // Log it so the user sees the key
+                    logs += "[${nowTimestamp()}] Encryption key generated"
+
                     if (newRunState && !isServerRunning) {
                         try {
                             server = HTTPServer(
                                 this,
                                 homeDir,
                                 isPasswordProtected = isPasswordedEnabled,
-                                accessToken = accessToken
-                            ) { message ->
-                                logs += message
-                            }
+                                accessToken = accessToken,
+                                encryptionKey = encryptionKey
+                            ) { message -> logs += message }
+
                             server?.start()
                             isServerRunning = true
                             logs += "[${nowTimestamp()}] Server started on port 8080"
@@ -270,7 +279,7 @@ fun FileManagerUIPreview() {
 
     val sampleLogs = remember {
         mutableStateListOf(
-            "=== HTTP File Manager v1.5.5 ===",
+            "=== HTTP File Manager v1.6.0 ===",
             "=== (c) zsoltk130   Dec/2025 ===",
             "[$formattedTime] Server started on port 8080",
             "[$formattedTime] GET / - 200 OK",

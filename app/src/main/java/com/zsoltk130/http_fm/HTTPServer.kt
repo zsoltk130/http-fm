@@ -3,6 +3,8 @@ package com.zsoltk130.http_fm
 import fi.iki.elonen.NanoHTTPD
 import android.content.Context
 import android.os.Environment
+import android.util.Base64
+import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.net.URLConnection
@@ -12,16 +14,21 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 class HTTPServer(
     private val context: Context,
     private val rootDir: File = Environment.getExternalStorageDirectory(),
     private val isPasswordProtected: Boolean,
     private val accessToken: String?,
+    private val encryptionKey: ByteArray,
     private val log: (String) -> Unit
 ) : NanoHTTPD(8080) {
     private val authorisedClients = mutableSetOf<String>()
 
+    // Main function that delegates functionality depending on URI
     override fun serve(session: IHTTPSession): Response {
         val clientIP = session.remoteIpAddress
 
@@ -43,13 +50,13 @@ class HTTPServer(
 
         // HTML Handlers
         return when {
-            uri == "/" -> listContentsInDirectory(rootDir)
+            uri == "/" -> serveContentPage(rootDir)
 
             uri.startsWith("/browse/") -> {
                 val relPath = URLDecoder.decode(uri.removePrefix("/browse/"), "UTF-8")
                 val dir = File(rootDir, relPath)
                 if (dir.exists() && dir.isDirectory) {
-                    listContentsInDirectory(dir, relPath)
+                    serveContentPage(dir, relPath)
                 } else {
                     newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Directory not found.")
                 }
@@ -75,6 +82,9 @@ class HTTPServer(
         }
     }
 
+    // SECURITY
+    // PASSWORD SECURITY
+    // Check whether user is authorized
     private fun isAuthorised(session: IHTTPSession, clientIP: String): Boolean {
         val token = session.parms["token"]
 
@@ -86,6 +96,7 @@ class HTTPServer(
         return authorisedClients.contains(clientIP)
     }
 
+    // Display auth page
     private fun servePasswordPage(): Response {
         val html = """
         <html>
@@ -152,8 +163,34 @@ class HTTPServer(
         return newFixedLengthResponse(Response.Status.OK, "text/html", html)
     }
 
-    // Build HTML to display contents of the phone's storage to user
-    private fun listContentsInDirectory(dir: File, relPath: String = ""): Response {
+    // AES ENCRYPTION
+    private fun decryptAESGCM(iv: ByteArray, ciphertext: ByteArray): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val spec = GCMParameterSpec(128, iv)
+        val key = SecretKeySpec(encryptionKey, "AES")
+
+        cipher.init(Cipher.DECRYPT_MODE, key, spec)
+        val plainBytes = cipher.doFinal(ciphertext)
+
+        return String(plainBytes, Charsets.UTF_8)
+    }
+
+    private fun parseEncryptedJson(session: IHTTPSession): String {
+        val files = HashMap<String, String>()
+        session.parseBody(files)
+
+        val body = files["postData"] ?: return ""
+
+        val json = JSONObject(body)
+        val iv = Base64.decode(json.getString("iv"), Base64.DEFAULT)
+        val data = Base64.decode(json.getString("data"), Base64.DEFAULT)
+
+        return decryptAESGCM(iv, data)
+    }
+
+    // Display phone contents page
+    private fun serveContentPage(dir: File, relPath: String = ""): Response {
+        val keyBase64 = Base64.encodeToString(encryptionKey, Base64.NO_WRAP)
         val files = dir.listFiles()?.toList() ?: return newFixedLengthResponse("No files found.")
         val html = buildString {
             append("""
@@ -256,48 +293,118 @@ class HTTPServer(
                 </style>
                 
                 <script>
-                    function uploadFiles() {
-                        const form = document.getElementById('uploadForm');
-                        const formData = new FormData(form);
-                        const progressBar = document.getElementById('progressBar');
-                        const statusDiv = document.getElementById('uploadStatus');
-    
-                        // Show progress bar
-                        progressBar.style.display = 'block';
-                        statusDiv.innerHTML = 'Uploading...';
-    
-                        const xhr = new XMLHttpRequest();
-    
-                        // Track upload progress
-                        xhr.upload.addEventListener('progress', function(e) {
-                            if (e.lengthComputable) {
-                                const percentComplete = (e.loaded / e.total) * 100;
-                                progressBar.value = percentComplete;
-                                statusDiv.innerHTML = 'Uploading... ' + Math.round(percentComplete) + '%';
-                            }
+//                    function uploadFiles() {
+//                        const form = document.getElementById('uploadForm');
+//                        const formData = new FormData(form);
+//                        const progressBar = document.getElementById('progressBar');
+//                        const statusDiv = document.getElementById('uploadStatus');
+//
+//                        // Show progress bar
+//                        progressBar.style.display = 'block';
+//                        statusDiv.innerHTML = 'Uploading...';
+//
+//                        const xhr = new XMLHttpRequest();
+//
+//                        // Track upload progress
+//                        xhr.upload.addEventListener('progress', function(e) {
+//                            if (e.lengthComputable) {
+//                                const percentComplete = (e.loaded / e.total) * 100;
+//                                progressBar.value = percentComplete;
+//                                statusDiv.innerHTML = 'Uploading... ' + Math.round(percentComplete) + '%';
+//                            }
+//                        });
+//
+//                        // Handle completion
+//                        xhr.addEventListener('load', function() {
+//                            if (xhr.status === 200) {
+//                                statusDiv.innerHTML = 'Upload successful!';
+//                                form.reset();
+//                                // Refresh the page after a short delay
+//                                setTimeout(() => location.reload(), 1000);
+//                            } else {
+//                                statusDiv.innerHTML = 'Upload failed!';
+//                            }
+//                            progressBar.style.display = 'none';
+//                        });
+//
+//                        xhr.open('POST', '/upload');
+//                        xhr.send(formData);
+//
+//                        return false; // Prevent normal form submission
+//                    }
+                    
+                    // AES ENCRYPTION
+                    const AES_KEY_B64 = "${'$'}keyBase64";
+                    
+                    async function importAESKey(base64Key) {
+                        const raw = Uint8Array.from(atob(base64Key), c => c.charCodeAt(0));
+                        return await crypto.subtle.importKey(
+                            "raw",
+                            raw,
+                            "AES-GCM",
+                            false,
+                            ["encrypt"]
+                        );
+                    }
+
+                    async function aesEncryptJSON(plaintext, key) {
+                        const enc = new TextEncoder();
+                        const iv = crypto.getRandomValues(new Uint8Array(12));
+
+                        const cipherBuffer = await crypto.subtle.encrypt(
+                            { name: "AES-GCM", iv },
+                            key,
+                            enc.encode(plaintext)
+                        );
+
+                        return JSON.stringify({
+                            iv: btoa(String.fromCharCode(...iv)),
+                            data: btoa(String.fromCharCode(...new Uint8Array(cipherBuffer)))
                         });
-    
-                        // Handle completion
-                        xhr.addEventListener('load', function() {
-                            if (xhr.status === 200) {
-                                statusDiv.innerHTML = 'Upload successful!';
-                                form.reset();
-                                // Refresh the page after a short delay
-                                setTimeout(() => location.reload(), 1000);
-                            } else {
-                                statusDiv.innerHTML = 'Upload failed!';
-                            }
-                            progressBar.style.display = 'none';
-                        });
-    
-                        xhr.open('POST', '/upload');
-                        xhr.send(formData);
-    
-                        return false; // Prevent normal form submission
                     }
                     
+                    async function uploadFiles() {
+                        const input = document.querySelector("input[type='file']");
+                        const progressBar = document.getElementById("progressBar");
+                        const statusDiv = document.getElementById("uploadStatus");
+
+                        const key = await importAESKey(AES_KEY_B64);
+
+                        progressBar.style.display = "block";
+                        statusDiv.textContent = "Encrypting...";
+
+                        const files = input.files;
+                        if (files.length === 0) return false;
+
+                        for (const file of files) {
+                            const arrayBuffer = await file.arrayBuffer();
+                            const base64File = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+                            const payloadObj = {
+                                filename: file.name,
+                                data: base64File,
+                                directory: document.querySelector("input[name='path']").value
+                            };
+
+                            const encryptedJSON = await aesEncryptJSON(JSON.stringify(payloadObj), key);
+
+                            statusDiv.textContent = `Uploading encrypted ${'$'}{file.name}...`;
+
+                            await fetch("/upload", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: encryptedJSON
+                            });
+                        }
+
+                        statusDiv.textContent = "Upload complete!";
+                        setTimeout(() => location.reload(), 1000);
+
+                        return false;
+                    }
+                    
+                    // Lazy-load images, videos, and audio
                     document.addEventListener("DOMContentLoaded", function() {
-                        // Lazy-load images, videos, and audio
                         const lazyMedia = document.querySelectorAll('img.lazy, video.lazy-video, audio.lazy-audio');
                         const observer = new IntersectionObserver(entries => {
                             entries.forEach(entry => {
