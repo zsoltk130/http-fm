@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
 
         // Display initial text
         logs += listOf(
-            "=== HTTP File Manager v1.6.0 ===",
+            "=== HTTP File Manager v1.6.8 ===",
             "=== (c) zsoltk130   Dec/2025 ==="
         )
 
@@ -279,7 +279,7 @@ fun FileManagerUIPreview() {
 
     val sampleLogs = remember {
         mutableStateListOf(
-            "=== HTTP File Manager v1.6.0 ===",
+            "=== HTTP File Manager v1.6.8 ===",
             "=== (c) zsoltk130   Dec/2025 ===",
             "[$formattedTime] Server started on port 8080",
             "[$formattedTime] GET / - 200 OK",

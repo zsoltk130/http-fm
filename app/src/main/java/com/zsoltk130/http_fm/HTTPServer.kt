@@ -16,6 +16,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 class HTTPServer(
@@ -76,13 +77,13 @@ class HTTPServer(
 
             uri == "/download-multiple" && session.method == Method.POST -> handleMultiDownload(session)
 
-            uri == "/upload" && session.method == Method.POST -> handleFileUpload(session)
+            uri == "/upload" && session.method == Method.POST -> handleEncryptedUpload(session)
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "404 Not Found")
         }
     }
 
-    // SECURITY
+    // SECURITY //
     // PASSWORD SECURITY
     // Check whether user is authorized
     private fun isAuthorised(session: IHTTPSession, clientIP: String): Boolean {
@@ -164,36 +165,74 @@ class HTTPServer(
     }
 
     // AES ENCRYPTION
-    private fun decryptAESGCM(iv: ByteArray, ciphertext: ByteArray): String {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val spec = GCMParameterSpec(128, iv)
+    private fun decryptAESCBC(iv: ByteArray, ciphertext: ByteArray): String {
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
         val key = SecretKeySpec(encryptionKey, "AES")
+        val ivSpec = IvParameterSpec(iv)
 
-        cipher.init(Cipher.DECRYPT_MODE, key, spec)
+        cipher.init(Cipher.DECRYPT_MODE, key, ivSpec)
         val plainBytes = cipher.doFinal(ciphertext)
 
         return String(plainBytes, Charsets.UTF_8)
     }
 
-    private fun parseEncryptedJson(session: IHTTPSession): String {
-        val files = HashMap<String, String>()
-        session.parseBody(files)
+    private fun handleEncryptedUpload(session: IHTTPSession): Response {
+        val files = mutableMapOf<String, String>()
+        return try {
+            session.parseBody(files)
+            log("Upload request received")
 
-        val body = files["postData"] ?: return ""
+            val rawJson = files["postData"]
+                ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "No POST data found.")
+            log("Encrypted upload received")
+            log("Received ${rawJson.length} bytes")
 
-        val json = JSONObject(body)
-        val iv = Base64.decode(json.getString("iv"), Base64.DEFAULT)
-        val data = Base64.decode(json.getString("data"), Base64.DEFAULT)
+            val json = JSONObject(rawJson)
+            val iv = Base64.decode(json.getString("iv"), Base64.DEFAULT)
+            val data = Base64.decode(json.getString("data"), Base64.DEFAULT)
 
-        return decryptAESGCM(iv, data)
+            log("Decrypting ${data.size} bytes...")
+            val plaintext = decryptAESCBC(iv, data)
+            log("Decrypted successfully")
+
+            val obj = JSONObject(plaintext)
+            val filename = obj.getString("filename")
+            val base64Data = obj.getString("data")
+            val directory = obj.getString("directory")
+
+            val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+
+            val targetDir = File(rootDir, directory)
+            if (!targetDir.exists()) targetDir.mkdirs()
+
+            val outFile = File(targetDir, filename)
+            outFile.writeBytes(bytes)
+
+            log("Saved file: ${outFile.absolutePath} (${bytes.size} bytes)")
+
+            newFixedLengthResponse(Response.Status.OK, "text/plain", "OK")
+        } catch (e: Exception) {
+            log("Upload error: ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "text/plain",
+                "Error: ${e.message}"
+            )
+        }
     }
+
+    // SECURITY END //
 
     // Display phone contents page
     private fun serveContentPage(dir: File, relPath: String = ""): Response {
         val keyBase64 = Base64.encodeToString(encryptionKey, Base64.NO_WRAP)
+        val safeKey = JSONObject.quote(keyBase64)
+
         val files = dir.listFiles()?.toList() ?: return newFixedLengthResponse("No files found.")
         val html = buildString {
-            append("""
+            append(
+                $"""
             <html>
             <head>
                 <title>http-fm</title>
@@ -292,114 +331,106 @@ class HTTPServer(
                     }
                 </style>
                 
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
                 <script>
-//                    function uploadFiles() {
-//                        const form = document.getElementById('uploadForm');
-//                        const formData = new FormData(form);
-//                        const progressBar = document.getElementById('progressBar');
-//                        const statusDiv = document.getElementById('uploadStatus');
-//
-//                        // Show progress bar
-//                        progressBar.style.display = 'block';
-//                        statusDiv.innerHTML = 'Uploading...';
-//
-//                        const xhr = new XMLHttpRequest();
-//
-//                        // Track upload progress
-//                        xhr.upload.addEventListener('progress', function(e) {
-//                            if (e.lengthComputable) {
-//                                const percentComplete = (e.loaded / e.total) * 100;
-//                                progressBar.value = percentComplete;
-//                                statusDiv.innerHTML = 'Uploading... ' + Math.round(percentComplete) + '%';
-//                            }
-//                        });
-//
-//                        // Handle completion
-//                        xhr.addEventListener('load', function() {
-//                            if (xhr.status === 200) {
-//                                statusDiv.innerHTML = 'Upload successful!';
-//                                form.reset();
-//                                // Refresh the page after a short delay
-//                                setTimeout(() => location.reload(), 1000);
-//                            } else {
-//                                statusDiv.innerHTML = 'Upload failed!';
-//                            }
-//                            progressBar.style.display = 'none';
-//                        });
-//
-//                        xhr.open('POST', '/upload');
-//                        xhr.send(formData);
-//
-//                        return false; // Prevent normal form submission
-//                    }
-                    
                     // AES ENCRYPTION
-                    const AES_KEY_B64 = "${'$'}keyBase64";
+                    const AES_KEY_B64 = $safeKey;
                     
-                    async function importAESKey(base64Key) {
-                        const raw = Uint8Array.from(atob(base64Key), c => c.charCodeAt(0));
-                        return await crypto.subtle.importKey(
-                            "raw",
-                            raw,
-                            "AES-GCM",
-                            false,
-                            ["encrypt"]
-                        );
-                    }
-
-                    async function aesEncryptJSON(plaintext, key) {
-                        const enc = new TextEncoder();
-                        const iv = crypto.getRandomValues(new Uint8Array(12));
-
-                        const cipherBuffer = await crypto.subtle.encrypt(
-                            { name: "AES-GCM", iv },
-                            key,
-                            enc.encode(plaintext)
-                        );
-
+                    function encryptWithCryptoJS(plaintext, base64Key) {
+                        const key = CryptoJS.enc.Base64.parse(base64Key);
+                        const iv = CryptoJS.lib.WordArray.random(16); // 16 bytes for AES-CBC
+                        
+                        const encrypted = CryptoJS.AES.encrypt(plaintext, key, {
+                            iv: iv,
+                            mode: CryptoJS.mode.CBC,
+                            padding: CryptoJS.pad.Pkcs7
+                        });
+                        
                         return JSON.stringify({
-                            iv: btoa(String.fromCharCode(...iv)),
-                            data: btoa(String.fromCharCode(...new Uint8Array(cipherBuffer)))
+                            iv: CryptoJS.enc.Base64.stringify(iv),
+                            data: encrypted.toString()
                         });
                     }
-                    
+                        
                     async function uploadFiles() {
                         const input = document.querySelector("input[type='file']");
                         const progressBar = document.getElementById("progressBar");
                         const statusDiv = document.getElementById("uploadStatus");
 
-                        const key = await importAESKey(AES_KEY_B64);
-
-                        progressBar.style.display = "block";
-                        statusDiv.textContent = "Encrypting...";
-
                         const files = input.files;
                         if (files.length === 0) return false;
 
+                        progressBar.style.display = "block";
+
                         for (const file of files) {
-                            const arrayBuffer = await file.arrayBuffer();
-                            const base64File = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                            try {
+                                statusDiv.textContent = `Processing ${'$'}{file.name}...`;
+                                
+                                // Read file as base64
+                                const arrayBuffer = await file.arrayBuffer();
+                                const uint8Array = new Uint8Array(arrayBuffer);
+                                
+                                // Convert to base64 in smaller chunks to avoid memory issues
+                                let base64File = '';
+                                const chunkSize = 8192;
+                                for (let i = 0; i < uint8Array.length; i += chunkSize) {
+                                    const chunk = uint8Array.slice(i, i + chunkSize);
+                                    base64File += String.fromCharCode(...chunk);
+                                }
+                                base64File = btoa(base64File);
 
-                            const payloadObj = {
-                                filename: file.name,
-                                data: base64File,
-                                directory: document.querySelector("input[name='path']").value
-                            };
+                                const payloadObj = {
+                                    filename: file.name,
+                                    data: base64File,
+                                    directory: document.querySelector("input[name='path']").value
+                                };
 
-                            const encryptedJSON = await aesEncryptJSON(JSON.stringify(payloadObj), key);
+                                statusDiv.textContent = `Encrypting ${'$'}{file.name}...`;
 
-                            statusDiv.textContent = `Uploading encrypted ${'$'}{file.name}...`;
+                                // Encrypt
+                                const key = CryptoJS.enc.Base64.parse(AES_KEY_B64);
+                                const iv = CryptoJS.lib.WordArray.random(16);
+                                
+                                const encrypted = CryptoJS.AES.encrypt(
+                                    JSON.stringify(payloadObj), 
+                                    key, 
+                                    {
+                                        iv: iv,
+                                        mode: CryptoJS.mode.CBC,
+                                        padding: CryptoJS.pad.Pkcs7
+                                    }
+                                );
 
-                            await fetch("/upload", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: encryptedJSON
-                            });
+                                const encryptedJSON = JSON.stringify({
+                                    iv: CryptoJS.enc.Base64.stringify(iv),
+                                    data: encrypted.toString()
+                                });
+
+                                statusDiv.textContent = `Uploading ${'$'}{file.name}...`;
+
+                                const response = await fetch("/upload", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: encryptedJSON
+                                });
+
+                                if (!response.ok) {
+                                    const errorText = await response.text();
+                                    throw new Error(`Upload failed: ${'$'}{response.status} - ${'$'}{errorText}`);
+                                }
+
+                                statusDiv.textContent = `Uploaded ${'$'}{file.name} successfully!`;
+
+                            } catch (error) {
+                                console.error("Upload error:", error);
+                                statusDiv.textContent = `Error uploading ${'$'}{file.name}: ${'$'}{error.message}`;
+                                progressBar.style.display = "none";
+                                return false;
+                            }
                         }
 
-                        statusDiv.textContent = "Upload complete!";
-                        setTimeout(() => location.reload(), 1000);
-
+                        statusDiv.textContent = "All uploads complete!";
+                        setTimeout(() => location.reload(), 1500);
                         return false;
                     }
                     
@@ -436,7 +467,7 @@ class HTTPServer(
             </head>
             
             <body>
-                <h2>Files in /$relPath</h2>
+                <h2>Files in /$$relPath</h2>
                 <ul>
             """.trimIndent())
 
@@ -483,7 +514,7 @@ class HTTPServer(
             """.trimIndent())
 
             append("""
-                <form id="uploadForm" onsubmit="return uploadFiles()">
+                <form id="uploadForm" onsubmit="event.preventDefault(); uploadFiles(); return false;">
                     <input type="file" name="file" multiple />
                     <input type="hidden" name="path" value="$relPath" />
                     <button type="submit">Upload</button>
@@ -523,6 +554,7 @@ class HTTPServer(
         }
     }
 
+    // Helper functions for downloading multiple files
     private fun addFileToZip(file: File, zipPath: String, zipOut: ZipOutputStream) {
         zipOut.putNextEntry(ZipEntry(zipPath))
         file.inputStream().use { it.copyTo(zipOut) }
@@ -643,6 +675,7 @@ class HTTPServer(
         }
     }
 
+    // Thumbnail generation
     private fun generatePreviewHTML(encodedPath: String, fileName: String): String {
         val previewUrl = "/preview/$encodedPath"
         val mimeType = URLConnection.guessContentTypeFromName(fileName) ?: "application/octet-stream"
