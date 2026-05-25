@@ -279,8 +279,8 @@ fun FileManagerUIPreview() {
 
     val sampleLogs = remember {
         mutableStateListOf(
-            "=== HTTP File Manager v1.6.8 ===",
-            "=== (c) zsoltk130   Dec/2025 ===",
+            "=== HTTP File Manager v1.7.0 ===",
+            "=== (c) zsoltk130   May/2026 ===",
             "[$formattedTime] Server started on port 8080",
             "[$formattedTime] GET / - 200 OK",
             "[$formattedTime] GET /styles.css - 200 OK",
