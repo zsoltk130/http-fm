@@ -179,45 +179,49 @@ class HTTPServer(
         val files = mutableMapOf<String, String>()
         return try {
             session.parseBody(files)
-            log("Upload request received")
+
+            // Extract metadata from custom headers
+            val filename = URLDecoder.decode(session.headers["x-file-name"] ?: "", "UTF-8")
+            val directory = URLDecoder.decode(session.headers["x-target-dir"] ?: "", "UTF-8")
+            val chunkIndex = (session.headers["x-chunk-index"] ?: "0").toInt()
+
+            if (filename.isBlank()) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Missing metadata headers.")
+            }
 
             val rawJson = files["postData"]
                 ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "No POST data found.")
-            log("Encrypted upload received")
-            log("Received ${rawJson.length} bytes")
 
             val json = JSONObject(rawJson)
             val iv = Base64.decode(json.getString("iv"), Base64.DEFAULT)
             val data = Base64.decode(json.getString("data"), Base64.DEFAULT)
 
-            log("Decrypting ${data.size} bytes...")
-            val plaintext = decryptAESCBC(iv, data)
-            log("Decrypted successfully")
+            // Decrypt using your updated GCM method
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            val key = SecretKeySpec(encryptionKey, "AES")
+            val ivSpec = GCMParameterSpec(128, iv) // Utilizing the 128-bit tag constructor fix
+            cipher.init(Cipher.DECRYPT_MODE, key, ivSpec)
 
-            val obj = JSONObject(plaintext)
-            val filename = obj.getString("filename")
-            val base64Data = obj.getString("data")
-            val directory = obj.getString("directory")
-
-            val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+            val decryptedBytes = cipher.doFinal(data)
 
             val targetDir = File(rootDir, directory)
             if (!targetDir.exists()) targetDir.mkdirs()
-
             val outFile = File(targetDir, filename)
-            outFile.writeBytes(bytes)
 
-            log("Saved file: ${outFile.absolutePath} (${bytes.size} bytes)")
+            // Chunking logic: Overwrite on first chunk, append on subsequent chunks
+            if (chunkIndex == 0) {
+                outFile.writeBytes(decryptedBytes)
+                log("Starting new file upload: $filename")
+            } else {
+                outFile.appendBytes(decryptedBytes)
+                log("Appended chunk $chunkIndex to $filename")
+            }
 
             newFixedLengthResponse(Response.Status.OK, "text/plain", "OK")
         } catch (e: Exception) {
             log("Upload error: ${e.message}")
             e.printStackTrace()
-            newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "text/plain",
-                "Error: ${e.message}"
-            )
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Error: ${e.message}")
         }
     }
 
@@ -355,79 +359,69 @@ class HTTPServer(
                         const input = document.querySelector("input[type='file']");
                         const progressBar = document.getElementById("progressBar");
                         const statusDiv = document.getElementById("uploadStatus");
-
                         const files = input.files;
                         if (files.length === 0) return false;
-
+                    
                         progressBar.style.display = "block";
-
+                        const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB Chunks
+                    
                         for (const file of files) {
-                            try {
-                                statusDiv.textContent = `Processing ${'$'}{file.name}...`;
-                                
-                                // Read file as base64
-                                const arrayBuffer = await file.arrayBuffer();
-                                const uint8Array = new Uint8Array(arrayBuffer);
-                                
-                                // Convert to base64 in smaller chunks to avoid memory issues
-                                let base64File = '';
-                                const chunkSize = 8192;
-                                for (let i = 0; i < uint8Array.length; i += chunkSize) {
-                                    const chunk = uint8Array.slice(i, i + chunkSize);
-                                    base64File += String.fromCharCode(...chunk);
-                                }
-                                base64File = btoa(base64File);
-
-                                const payloadObj = {
-                                    filename: file.name,
-                                    data: base64File,
-                                    directory: document.querySelector("input[name='path']").value
-                                };
-
-                                statusDiv.textContent = `Encrypting ${'$'}{file.name}...`;
-
-                                // Encrypt
+                            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                            let chunkIndex = 0;
+                    
+                            while (chunkIndex < totalChunks) {
+                                const start = chunkIndex * CHUNK_SIZE;
+                                const end = Math.min(start + CHUNK_SIZE, file.size);
+                                const chunk = file.slice(start, end);
+                    
+                                statusDiv.textContent = `Processing ${'$'}{file.name} (Chunk ${'$'}{chunkIndex + 1}/${'$'}{totalChunks})...`;
+                    
+                                // 1. Convert chunk blob to WordArray for CryptoJS
+                                const arrayBuffer = await chunk.arrayBuffer();
+                                const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer);
+                    
+                                // 2. Encrypt the chunk using AES-GCM
                                 const key = CryptoJS.enc.Base64.parse(AES_KEY_B64);
-                                const iv = CryptoJS.lib.WordArray.random(16);
+                                const iv = CryptoJS.lib.WordArray.random(12); // GCM standard is 12 bytes / 96 bits IV
                                 
-                                const encrypted = CryptoJS.AES.encrypt(
-                                    JSON.stringify(payloadObj), 
-                                    key, 
-                                    {
-                                        iv: iv,
-                                        mode: CryptoJS.mode.CBC,
-                                        padding: CryptoJS.pad.Pkcs7
-                                    }
-                                );
-
-                                const encryptedJSON = JSON.stringify({
+                                const encrypted = CryptoJS.AES.encrypt(wordArray, key, {
+                                    iv: iv,
+                                    mode: CryptoJS.mode.GCM,
+                                    padding: CryptoJS.pad.NoPadding
+                                });
+                    
+                                // 3. Prepare payload for this specific chunk
+                                const payload = JSON.stringify({
                                     iv: CryptoJS.enc.Base64.stringify(iv),
                                     data: encrypted.toString()
                                 });
-
-                                statusDiv.textContent = `Uploading ${'$'}{file.name}...`;
-
+                    
+                                statusDiv.textContent = `Uploading ${'$'}{file.name} chunk ${'$'}{chunkIndex + 1}...`;
+                    
+                                // 4. Send chunk with metadata in headers
                                 const response = await fetch("/upload", {
                                     method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: encryptedJSON
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        "X-File-Name": encodeURIComponent(file.name),
+                                        "X-Target-Dir": encodeURIComponent(document.querySelector("input[name='path']").value),
+                                        "X-Chunk-Index": chunkIndex.toString(),
+                                        "X-Total-Chunks": totalChunks.toString()
+                                    },
+                                    body: payload
                                 });
-
+                    
                                 if (!response.ok) {
-                                    const errorText = await response.text();
-                                    throw new Error(`Upload failed: ${'$'}{response.status} - ${'$'}{errorText}`);
+                                    statusDiv.textContent = `Error on chunk ${'$'}{chunkIndex + 1}: ${'$'}{await response.text()}`;
+                                    return false;
                                 }
-
-                                statusDiv.textContent = `Uploaded ${'$'}{file.name} successfully!`;
-
-                            } catch (error) {
-                                console.error("Upload error:", error);
-                                statusDiv.textContent = `Error uploading ${'$'}{file.name}: ${'$'}{error.message}`;
-                                progressBar.style.display = "none";
-                                return false;
+                    
+                                chunkIndex++;
+                                progressBar.value = (chunkIndex / totalChunks) * 100;
                             }
+                            statusDiv.textContent = `${'$'}{file.name} uploaded successfully!`;
                         }
-
+                    
                         statusDiv.textContent = "All uploads complete!";
                         setTimeout(() => location.reload(), 1500);
                         return false;
