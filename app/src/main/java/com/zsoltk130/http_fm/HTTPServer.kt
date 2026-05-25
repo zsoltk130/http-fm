@@ -16,7 +16,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 class HTTPServer(
@@ -166,9 +165,9 @@ class HTTPServer(
 
     // AES ENCRYPTION
     private fun decryptAESCBC(iv: ByteArray, ciphertext: ByteArray): String {
-        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         val key = SecretKeySpec(encryptionKey, "AES")
-        val ivSpec = IvParameterSpec(iv)
+        val ivSpec = GCMParameterSpec(128, iv)
 
         cipher.init(Cipher.DECRYPT_MODE, key, ivSpec)
         val plainBytes = cipher.doFinal(ciphertext)
@@ -340,10 +339,10 @@ class HTTPServer(
                         const key = CryptoJS.enc.Base64.parse(base64Key);
                         const iv = CryptoJS.lib.WordArray.random(16); // 16 bytes for AES-CBC
                         
-                        const encrypted = CryptoJS.AES.encrypt(plaintext, key, {
+                        const encrypted = CryptoJS.AES.encrypt(JSON.stringify(payloadObj), key, {
                             iv: iv,
-                            mode: CryptoJS.mode.CBC,
-                            padding: CryptoJS.pad.Pkcs7
+                            mode: CryptoJS.mode.GCM,
+                            padding: CryptoJS.pad.NoPadding
                         });
                         
                         return JSON.stringify({
