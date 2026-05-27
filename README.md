@@ -6,6 +6,9 @@ Lightweight HTTP file manager for Android 10+
 
 An asynchronous, lightweight Android local web server built using NanoHTTPD, designed for secure, memory-efficient file synchronization and media streaming between mobile devices and any standard desktop browser without relying on cloud services.
 
+## To-do
+
+Better user interface (more information about what's happening), more functions (delete, move, create files/folders)
 ## Screenshots
 
 ![Mobile Interface I](0.png) 
